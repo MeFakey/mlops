@@ -1,0 +1,98 @@
+# Install required library
+!pip install -q prometheus-client
+
+# Import libraries
+import logging
+import time
+import pandas as pd
+
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+from sklearn.datasets import load_diabetes
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('mlops_monitoring.log')
+    ],
+    force=True
+)
+
+# Load dataset
+data = load_diabetes()
+X = pd.DataFrame(data.data, columns=data.feature_names)
+y = pd.Series(data.target)
+
+# Split dataset
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+# Train model
+model = LinearRegression()
+logging.info("Starting model training...")
+model.fit(X_train, y_train)
+logging.info("Model training completed.")
+
+# Evaluate model
+y_pred = model.predict(X_test)
+mse = mean_squared_error(y_test, y_pred)
+logging.info(f"Mean Squared Error: {mse}")
+
+# Measure prediction latency
+start_time = time.time()
+prediction = model.predict(X_test)
+end_time = time.time()
+
+latency = end_time - start_time
+logging.info(f"Prediction latency: {latency:.6f} seconds")
+
+# Performance degradation check
+MSE_THRESHOLD = 3500.0
+
+if mse > MSE_THRESHOLD:
+    logging.warning(
+        f"ALERT: Model MSE {mse:.2f} exceeded threshold {MSE_THRESHOLD}"
+    )
+else:
+    logging.info(
+        f"MSE within acceptable range (threshold={MSE_THRESHOLD})."
+    )
+
+    from prometheus_client import start_http_server, Gauge
+from google.colab import output
+import time
+
+# Create Prometheus metrics
+MSE_GAUGE = Gauge(
+    'model_mse',
+    'Mean Squared Error of the deployed model'
+)
+
+LATENCY_GAUGE = Gauge(
+    'model_prediction_latency_seconds',
+    'Prediction latency in seconds'
+)
+
+# Set metric values
+MSE_GAUGE.set(mse)
+LATENCY_GAUGE.set(latency)
+
+# Start Prometheus server
+start_http_server(8000)
+
+time.sleep(2)
+
+# Open endpoint using Colab proxy
+url = output.eval_js(
+    "google.colab.kernel.proxyPort(8000)"
+)
+
+print("Metrics exposed at:", url)
+
+# Production: Prometheus collects metrics and Grafana generates alerts.
+
