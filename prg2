@@ -1,0 +1,57 @@
+!pip install -q flask
+
+import pandas as pd
+import joblib
+from sklearn.datasets import load_diabetes
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+
+data = load_diabetes()
+X = pd.DataFrame(data.data, columns=data.feature_names)
+y = data.target
+
+X_train,X_test,y_train,y_test = train_test_split(X,y,test_size=0.3,random_state=42)
+
+model = LinearRegression()
+model.fit(X_train,y_train)
+
+y_pred = model.predict(X_test)
+print("Mean Squared Error:",mean_squared_error(y_test,y_pred))
+
+joblib.dump(model,"model.joblib")
+loaded_model = joblib.load("model.joblib")
+print("Model Loaded Succesfully")
+
+%%writefile app.py
+
+from flask import Flask, request, jsonify
+import joblib
+
+app = Flask("__name__")
+model = joblib.load("model.joblib")
+
+@app.route("/predict",methods=['POST'])
+def predict():
+  data = request.get_json()
+  prediction = model.predict([data['features']])
+  return jsonify({"prediction":float(prediction[0])})
+
+  import threading,time,requests
+from app import app
+
+threading.Thread(
+    target=lambda: app.run(port=5000,use_reloader=False),
+    daemon=True
+).start()
+
+time.sleep(2)
+
+sample = X_test.iloc[0].to_list()
+response = requests.post(
+    "http://127.0.0.1:5000/predict",
+    json={'features':sample}
+)
+print(response.json())
+
+
